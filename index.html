@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>인콜 월급여 계산기 (동기화)</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2a5a8a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="월급여">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBYK2MZllNTmvLD9uUkas3RfAtObU6nfZU",
+    authDomain: "rmqdurptksr.firebaseapp.com",
+    projectId: "rmqdurptksr",
+    storageBucket: "rmqdurptksr.firebasestorage.app",
+    messagingSenderId: "657236251355",
+    appId: "1:657236251355:web:17af9ce536cafc3963f2fe"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window.__fb = { doc, setDoc, getDoc, onSnapshot, db };
+  window.dispatchEvent(new Event('firebase-ready'));
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background: #f5f3ef; color: #2a2620; min-height: 100vh; padding-bottom: 60px; }
+
+  .header { background: #fff; border-bottom: 1px solid #e8e3db; padding: 18px 20px 14px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px #0000000a; }
+  .header-top { display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 17px; font-weight: 700; color: #2a5a8a; }
+  .sync-badge { font-size: 10px; padding: 4px 10px; border-radius: 20px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+  .sync-badge.syncing { background: #fdf8ec; color: #c9a030; }
+  .sync-badge.synced { background: #eaf5f0; color: #2a6049; }
+  .sync-badge.error { background: #fef0ee; color: #e05040; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .date-nav { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .date-nav button { background: #f5f3ef; border: 1px solid #e0dbd4; border-radius: 6px; padding: 5px 14px; font-size: 12px; color: #2a5a8a; cursor: pointer; font-family: inherit; font-weight: 700; }
+  .date-nav button:hover { background: #eaf2fb; }
+  .date-label { font-size: 15px; font-weight: 700; color: #2a2620; flex: 1; text-align: center; }
+
+  .device-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .device-row label { font-size: 11px; color: #9a9088; font-weight: 600; }
+  .device-row input { flex: 1; background: #f8f6f2; border: 1px solid #e8e3db; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-family: inherit; outline: none; }
+  .device-row input:focus { border-color: #2a5a8a; background: #fff; }
+
+  .tabs { display: flex; gap: 2px; padding: 10px 16px 0; background: #fff; border-bottom: 1px solid #e8e3db; }
+  .tab { flex: 1; padding: 9px 6px; font-size: 11.5px; cursor: pointer; border-radius: 7px 7px 0 0; color: #9a9088; text-align: center; border: 1px solid transparent; border-bottom: none; transition: all 0.2s; font-weight: 600; }
+  .tab.active { color: #2a5a8a; background: #f5f3ef; border-color: #e8e3db; font-weight: 700; }
+
+  .content { padding: 18px 16px; max-width: 920px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: #fff; border: 1px solid #e8e3db; border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px #0000000a; }
+  .card-title { font-size: 12px; font-weight: 700; color: #9a9088; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+  .card-title span { font-size: 15px; }
+
+  .cal-legend { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .cal-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6a6258; font-weight: 600; }
+  .cal-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .cal-day-label { text-align: center; font-size: 13px; color: #b0a898; padding: 6px 0; font-weight: 700; }
+  .cal-cell { min-height: 138px; border-radius: 10px; border: 1.5px solid #e8e3db; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; padding: 8px 3px 8px; }
+  .cal-cell.empty { background: transparent; border-color: transparent; }
+  .cal-cell.work { background: #eaf2fb; border-color: #cfe0f5; }
+  .cal-cell.off { background: #f2f0eb; border-color: #e8e3db; }
+  .cal-cell.today { outline: 2px solid #c9a030; outline-offset: -1px; }
+  .cal-num { font-size: 14px; color: #6a6258; font-weight: 700; }
+  .cal-cell.off .cal-num { color: #b0a898; }
+  .cal-num.holiday, .cal-cell.off .cal-num.holiday { color: #d0402a; }
+  .cal-cell.holiday { border-color: #f0c4ba; }
+  .cal-call-input { width: 94%; background: #fff; border: 1px solid #cfe0f5; border-radius: 6px; font-size: 14px; text-align: center; font-weight: 700; color: #2a5a8a; padding: 5px 0; outline: none; font-family: inherit; }
+  .cal-call-input:focus { border-color: #2a5a8a; }
+  .cal-call-input::placeholder { color: #b8cfe8; font-weight: 400; font-size: 12px; }
+  .cal-total-input { width: 94%; background: #fff; border: 1px solid #a8d0c8; border-radius: 6px; font-size: 12.5px; text-align: center; font-weight: 700; color: #1f7a68; padding: 4px 0; outline: none; font-family: inherit; margin-top: 1px; }
+  .cal-total-input:focus { border-color: #1f7a68; }
+  .cal-total-input::placeholder { color: #a8d0c8; font-weight: 400; font-size: 10px; }
+  .cal-extra-input { width: 94%; background: #fff8ec; border: 1px solid #e8d4a0; border-radius: 6px; font-size: 14px; text-align: center; font-weight: 700; color: #a07a1a; padding: 5px 0; outline: none; font-family: inherit; }
+  .cal-extra-input:focus { border-color: #c9a030; }
+  .cal-extra-input::placeholder { color: #e0c98a; font-weight: 400; font-size: 11.5px; }
+  .cal-dur-row { display: flex; align-items: center; gap: 1px; width: 99%; margin-top: 1px; }
+  .cal-dur-h, .cal-dur-m { flex: 1; min-width: 0; width: 0; background: #fff8ec; border: 1px solid #e8d4a0; border-radius: 4px; font-size: 10px; text-align: center; font-weight: 600; color: #a07a1a; padding: 4px 0; outline: none; font-family: inherit; }
+  .cal-dur-h:focus, .cal-dur-m:focus { border-color: #c9a030; }
+  .cal-dur-h::placeholder, .cal-dur-m::placeholder { color: #e0c98a; font-weight: 400; }
+  .dur-unit { font-size: 7px; color: #c9a030; font-weight: 700; flex-shrink: 0; width: 7px; text-align: center; }
+  .cal-annual-btn { width: 94%; margin-top: 2px; padding: 4px 0; border-radius: 6px; border: 1px solid #d8cbe8; background: #fff; color: #9a8ab0; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .cal-annual-btn.on { background: #8a5ec9; border-color: #8a5ec9; color: #fff; }
+  .cal-cell.annual-day { box-shadow: inset 0 0 0 2px #8a5ec9; }
+  .cal-memo-btn { width: 94%; margin-top: 2px; padding: 4px 0; border-radius: 6px; border: 1px dashed #d0cbc4; background: transparent; color: #b0a898; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .cal-memo-btn.has-memo { border-style: solid; border-color: #c9457a; background: #c9457a; color: #fff; font-weight: 700; box-shadow: 0 1px 4px #c9457a55; }
+
+  .stat-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 4px; }
+  .summary-box { background: #f8f6f2; border: 1.5px solid #e8e3db; border-radius: 10px; padding: 14px; text-align: center; }
+  .s-label { font-size: 11px; color: #9a9088; font-weight: 600; margin-bottom: 6px; }
+  .s-val { font-size: 20px; font-weight: 700; color: #2a5a8a; }
+  .s-unit { font-size: 10px; color: #b0a898; margin-top: 2px; }
+
+  .breakdown-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0ece6; font-size: 13px; }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-row .b-label { color: #6a6258; font-weight: 500; }
+  .breakdown-row .b-val { color: #2a2620; font-weight: 700; }
+  .breakdown-row.total { border-top: 2px solid #2a5a8a; margin-top: 6px; padding-top: 14px; }
+  .breakdown-row.total .b-label { font-size: 14px; font-weight: 700; color: #2a2620; }
+  .breakdown-row.total .b-val { font-size: 20px; color: #2a5a8a; }
+  .breakdown-row input { width: 110px; background: #f8f6f2; border: 1.5px solid #e8e3db; border-radius: 6px; padding: 6px 10px; font-size: 13px; text-align: right; font-family: inherit; font-weight: 700; color: #2a2620; outline: none; }
+  .breakdown-row input:focus { border-color: #2a5a8a; background: #fff; }
+
+  .tier-badge { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; background: #eaf2fb; color: #2a5a8a; margin-left: 6px; }
+  .extra-badge { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; background: #fff8ec; color: #a07a1a; margin-left: 6px; }
+
+  .tier-table { width: 100%; border-collapse: collapse; }
+  .tier-table th { font-size: 11px; color: #9a9088; font-weight: 700; text-align: left; padding: 8px 6px; border-bottom: 1.5px solid #e8e3db; }
+  .tier-table td { padding: 8px 6px; border-bottom: 1px solid #f0ece6; font-size: 13px; }
+  .tier-table input { width: 100%; background: #f8f6f2; border: 1.5px solid #e8e3db; border-radius: 6px; padding: 6px 8px; font-size: 13px; text-align: center; font-family: inherit; font-weight: 700; color: #2a2620; outline: none; }
+  .tier-table input:focus { border-color: #2a5a8a; background: #fff; }
+
+  .field-group { margin-bottom: 14px; }
+  .field-group label { display: block; font-size: 12px; color: #6a6258; font-weight: 600; margin-bottom: 6px; }
+  .field-group input { width: 100%; background: #f8f6f2; border: 1.5px solid #e8e3db; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit; font-weight: 700; color: #2a2620; outline: none; }
+  .field-group input:focus { border-color: #2a5a8a; background: #fff; }
+
+  .tip-note { background: #eaf2fb; border-left: 3px solid #2a5a8a; border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 11px; color: #2a5a8a; line-height: 1.7; margin-top: 14px; }
+  .tip-note.gold { background: #fff8ec; border-left-color: #c9a030; color: #a07a1a; }
+
+  .m-bar-chart { display: flex; align-items: flex-end; gap: 10px; height: 180px; overflow-x: auto; padding-bottom: 4px; }
+  .m-bar-col { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 46px; flex-shrink: 0; }
+  .m-bar-track { width: 32px; height: 140px; display: flex; flex-direction: column; justify-content: flex-end; background: #f8f6f2; border-radius: 6px 6px 0 0; overflow: hidden; }
+  .m-bar-fill { width: 100%; border-radius: 6px 6px 0 0; transition: height .3s; }
+  .m-bar-val { font-size: 9.5px; color: #6a6258; font-weight: 700; white-space: nowrap; }
+  .m-bar-label { font-size: 10px; color: #9a9088; font-weight: 700; }
+  .m-bar-col.current .m-bar-label { color: #2a5a8a; }
+  .m-table-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #f0ece6; font-size: 12.5px; }
+  .m-table-row:last-child { border-bottom: none; }
+  .m-table-row .m-label { color: #6a6258; font-weight: 600; }
+  .m-table-row .m-val { color: #2a2620; font-weight: 700; }
+  .save-btn { width: 100%; padding: 13px; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; background:#2a5a8a; }
+  .save-btn:hover { opacity: 0.9; }
+
+  .popup-overlay { display: none; position: fixed; inset: 0; background: #00000033; z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .popup-overlay.open { display: flex; }
+  .popup { background: #fff; border: 1px solid #e8e3db; border-radius: 14px; padding: 20px; width: 100%; max-width: 340px; box-shadow: 0 8px 32px #00000018; }
+  .popup h4 { font-size: 14px; font-weight: 700; color: #2a2620; margin-bottom: 12px; }
+  .popup textarea { width: 100%; background: #f8f6f2; border: 1.5px solid #e8e3db; border-radius: 8px; padding: 10px 12px; font-size: 13px; font-family: inherit; color: #2a2620; resize: none; outline: none; line-height: 1.6; }
+  .popup textarea:focus { border-color: #c9a030; background: #fff; }
+  .popup-btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .popup-btn-row button { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #e8e3db; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .popup-btn-save { background: #c9a030; border-color: #c9a030 !important; color: #fff; }
+  .popup-btn-cancel { background: #fafaf8; color: #9a9088; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <h1>📞 인콜 월급여 계산기</h1>
+    <div class="sync-badge syncing" id="sync-badge"><div class="sync-dot"></div><span id="sync-text">연결 중...</span></div>
+  </div>
+  <div class="date-nav">
+    <button onclick="changeMonth(-1)">◀</button>
+    <div class="date-label" id="date-label"></div>
+    <button onclick="changeMonth(1)">▶</button>
+  </div>
+  <div class="device-row">
+    <label>계정방(같은 값 입력한 기기끼리 동기화):</label>
+    <input type="text" id="room-id" placeholder="예: bori-payroll" onchange="changeRoom()">
+  </div>
+  <div style="font-size:10px;color:#b0a898;margin-top:5px;line-height:1.5;">🔒 이 방 이름을 아는 사람은 누구나 같은 데이터를 보고 고칠 수 있어요. 남들이 쉽게 못 맞힐 만한 이름(숫자·영문 조합)으로 정해두세요.</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+    <button type="button" onclick="exportFullBackup()" style="font-size:11px;padding:6px 12px;border-radius:6px;border:1px solid #e0dbd4;background:#f5f3ef;color:#2a5a8a;cursor:pointer;font-family:inherit;font-weight:700;">💾 전체 데이터 백업(JSON)</button>
+    <span style="font-size:10px;color:#b0a898;">가끔 눌러서 파일로 받아두면, 무슨 일이 생겨도 이 파일로 복구할 수 있어요.</span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('calendar')">📅 근무 달력</div>
+  <div class="tab" onclick="switchTab('pay')">💰 급여 계산</div>
+  <div class="tab" onclick="switchTab('settings')">⚙️ 단가 설정</div>
+  <div class="tab" onclick="switchTab('monthly')">📊 월간 그래프</div>
+  <div class="tab" onclick="switchTab('export')">📤 내보내기</div>
+</div>
+
+<div class="content">
+
+<div class="panel active" id="panel-calendar">
+  <div class="card">
+    <div class="card-title"><span>📅</span> 4일 근무 · 2일 휴무 (07:00–16:00)</div>
+    <div class="cal-legend">
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#eaf2fb;border:1.5px solid #cfe0f5"></div>정상근무 인콜</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fff8ec;border:1.5px solid #e8d4a0"></div>특근 콜 (990원/콜)</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#f2f0eb;border:1.5px solid #e8e3db"></div>휴무일</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8a5ec9"></div>연차 사용</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#d0402a"></div>공휴일</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#c9457a"></div>메모 있음</div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+  <div class="tip-note">💡 정상근무일은 파란 칸에 인콜 개수 입력. 특근 콜은 노란 칸에 콜수와 소요시간(분)을 함께 입력. 모든 데이터는 자동으로 클라우드에 저장돼서 다른 기기에서도 똑같이 보입니다.</div>
+</div>
+
+<div class="panel" id="panel-pay">
+  <div class="card">
+    <div class="card-title"><span>📊</span> 이번 달 요약</div>
+    <div class="stat-summary">
+      <div class="summary-box"><div class="s-label">근무일수</div><div class="s-val" id="p-workdays">0</div><div class="s-unit">일</div></div>
+      <div class="summary-box"><div class="s-label">정상근무 콜</div><div class="s-val" id="p-totalcalls">0</div><div class="s-unit">콜</div></div>
+      <div class="summary-box"><div class="s-label">일 평균 콜/시간</div><div class="s-val" id="p-avgperhour">0</div><div class="s-unit">콜/h</div></div>
+      <div class="summary-box"><div class="s-label">특근 콜</div><div class="s-val" id="p-extracalls" style="color:#a07a1a">0</div><div class="s-unit">콜</div></div>
+      <div class="summary-box" style="grid-column:1/3"><div class="s-label">특근 총 시간</div><div class="s-val" id="p-extrahours" style="color:#a07a1a">0min</div></div>
+      <div class="summary-box" style="grid-column:1/3"><div class="s-label">연차 사용일수</div><div class="s-val" id="p-annualdays" style="color:#8a5ec9">0</div><div class="s-unit">일</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>💵</span> 급여 내역</div>
+    <div class="breakdown-row">
+      <div class="b-label">기본급 (정상콜 × 단가)<span class="tier-badge" id="tier-badge">—</span></div>
+      <div class="b-val" id="pay-base">0원</div>
+    </div>
+    <div class="breakdown-row">
+      <div class="b-label">특근콜수당 (특근콜 × 990원)<span class="extra-badge" id="extra-badge">0콜</span></div>
+      <div class="b-val" id="pay-extracall">0원</div>
+    </div>
+    <div class="breakdown-row">
+      <div class="b-label">통신비</div>
+      <input type="number" id="pay-comm" value="30000" oninput="recalcPay()">
+    </div>
+    <div class="breakdown-row">
+      <div class="b-label">연차수당</div>
+      <input type="number" id="pay-annual" value="0" oninput="recalcPay()">
+    </div>
+    <div class="breakdown-row">
+      <div class="b-label">경조휴가비</div>
+      <input type="number" id="pay-condolence" value="0" oninput="recalcPay()">
+    </div>
+    <div class="breakdown-row">
+      <div class="b-label">추가정산액</div>
+      <input type="number" id="pay-extra" value="0" oninput="recalcPay()">
+    </div>
+    <div class="breakdown-row total">
+      <div class="b-label">총 급여</div>
+      <div class="b-val" id="pay-total">0원</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-settings">
+  <div class="card">
+    <div class="card-title"><span>🏷️</span> 정상근무 콜 단가표</div>
+    <table class="tier-table">
+      <thead><tr><th>평균 콜/시간</th><th>단가 (원/콜)</th></tr></thead>
+      <tbody id="tier-tbody"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title"><span>🌙</span> 특근 콜 단가</div>
+    <div class="field-group">
+      <label>특근 콜 단가 (원/콜)</label>
+      <input type="number" id="extra-rate" value="990" onchange="saveExtraRate()">
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span>📆</span> 근무 패턴 기준일</div>
+    <div class="field-group">
+      <label>휴무 시작일</label>
+      <input type="date" id="anchor-date" onchange="saveAnchor()">
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-monthly">
+  <div class="card">
+    <div class="card-title"><span>📊</span> 월별 급여 추이</div>
+    <div id="monthly-chart-wrap"></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span>📋</span> 월별 상세</div>
+    <div id="monthly-table"></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-export">
+  <div class="card">
+    <div class="card-title"><span>📤</span> 이번 달 검토용 요약</div>
+    <textarea id="export-text" readonly style="width:100%; margin-top:12px; background:#f8f6f2; border:1.5px solid #e8e3db; border-radius:10px; padding:14px; font-size:12px; font-family:'Consolas','Malgun Gothic',monospace; line-height:1.7; color:#2a2620; min-height:380px; resize:vertical;"></textarea>
+    <button class="save-btn" style="margin-top:12px" onclick="copyExport()">📋 전체 복사하기</button>
+  </div>
+</div>
+
+</div>
+
+<div class="popup-overlay" id="memo-popup-overlay">
+  <div class="popup">
+    <h4 id="memo-popup-title">메모</h4>
+    <textarea id="memo-popup-text" rows="4" placeholder="특이사항 메모"></textarea>
+    <div class="popup-btn-row">
+      <button class="popup-btn-cancel" onclick="closeMemoPopup()">취소</button>
+      <button class="popup-btn-save" onclick="saveMemoPopup()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Firebase 연동 준비 ──
+var fb = null;
+var ROOM = localStorage.getItem('payroll_room') || 'default-room';
+var syncTimer = null;
+
+window.addEventListener('firebase-ready', function(){
+  fb = window.__fb;
+  setSyncBadge('synced', '연결됨');
+  attachRealtimeListener();
+});
+
+function setSyncBadge(state, text){
+  var b=document.getElementById('sync-badge');
+  b.className='sync-badge '+state;
+  document.getElementById('sync-text').textContent=text;
+}
+
+function docRef(){
+  return fb.doc(fb.db, 'payroll_rooms', ROOM);
+}
+
+var remoteData = { calls:{}, extracalls:{}, extradur:{}, annual:{}, memo:{}, tiers:null, extraRate:null, anchor:null, paysettings:{} };
+var suppressWrite = false;
+
+function attachRealtimeListener(){
+  fb.onSnapshot(docRef(), function(snap){
+    if(snap.metadata && snap.metadata.hasPendingWrites){
+      // 내가 방금 입력한 내용이 아직 서버에 반영 중인 상태의 로컬 echo.
+      // 화면은 이미 내가 타이핑한 값을 그대로 보여주고 있으니 다시 그리면
+      // 입력 중인 칸의 포커스/커서가 날아가서 타이핑이 끊긴다 — 건너뛴다.
+      setSyncBadge('syncing','저장 중...');
+      return;
+    }
+    if(snap.exists()){
+      remoteData = snap.data();
+      suppressWrite = true;
+      TIERS = remoteData.tiers || TIERS;
+      EXTRA_RATE = remoteData.extraRate || EXTRA_RATE;
+      ANCHOR = remoteData.anchor || ANCHOR;
+      document.getElementById('anchor-date').value = ANCHOR;
+      document.getElementById('extra-rate').value = EXTRA_RATE;
+      buildTierTable();
+      buildCalendar();
+      buildPaySummary();
+      loadPaySettings();
+      if(document.getElementById('panel-monthly').classList.contains('active')) buildMonthlyChart();
+      suppressWrite = false;
+    }
+    if(snap.metadata && snap.metadata.fromCache){
+      // 서버에 못 붙고 이 PC에 저장된 마지막 캐시를 보여주는 중.
+      // 화면에 보이는 데이터는 실제 값이며 비어있는 게 아님.
+      setSyncBadge('error','오프라인 · 마지막 저장본 표시 중');
+    } else {
+      setSyncBadge('synced','동기화됨');
+    }
+  }, function(err){
+    setSyncBadge('error','오프라인 · 마지막 저장본 표시 중');
+    console.error(err);
+  });
+}
+
+function pushToCloud(){
+  if(!fb || suppressWrite) return;
+  setSyncBadge('syncing','저장 중...');
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(function(){
+    fb.setDoc(docRef(), remoteData, {merge:true}).then(function(){
+      setSyncBadge('synced','동기화됨');
+    }).catch(function(e){
+      setSyncBadge('error','저장 실패');
+      console.error(e);
+    });
+  }, 500);
+}
+
+function changeRoom(){
+  ROOM = document.getElementById('room-id').value.trim() || 'default-room';
+  localStorage.setItem('payroll_room', ROOM);
+  setSyncBadge('syncing','전환 중...');
+  attachRealtimeListener();
+}
+function exportFullBackup(){
+  var blob=new Blob([JSON.stringify(remoteData,null,2)],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='인콜급여_전체백업_'+todayStr()+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── 로컬 로직 (기존과 동일하되 저장은 remoteData에) ──
+function pad(n){return n<10?'0'+n:''+n;}
+
+var currentYear, currentMonth;
+var TIERS = [
+  {min:30, rate:580},{min:28, rate:575},{min:26, rate:570},
+  {min:24, rate:565},{min:20, rate:560},{min:0, rate:555}
+];
+var EXTRA_RATE = 990;
+var ANCHOR = '2026-07-08';
+
+// 대한민국 법정공휴일 (2026년 기준). 음력 기반 날짜(설날·부처님오신날·추석)와
+// 대체공휴일은 매년 바뀌므로, 다른 연도로 넘어가면 직접 추가해줘야 함.
+var KOREAN_HOLIDAYS = {
+  '2026-01-01':'신정',
+  '2026-02-16':'설날',
+  '2026-02-17':'설날',
+  '2026-02-18':'설날',
+  '2026-03-01':'삼일절',
+  '2026-03-02':'대체공휴일',
+  '2026-05-05':'어린이날',
+  '2026-05-24':'부처님오신날',
+  '2026-05-25':'대체공휴일',
+  '2026-06-06':'현충일',
+  '2026-08-15':'광복절',
+  '2026-09-24':'추석',
+  '2026-09-25':'추석',
+  '2026-09-26':'추석',
+  '2026-10-03':'개천절',
+  '2026-10-09':'한글날',
+  '2026-12-25':'성탄절'
+};
+
+function todayStr(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function dateKey(y,m,d){ return y+'-'+pad(m+1)+'-'+pad(d); }
+
+function isWorkDay(y,m,d){
+  var target = new Date(y,m,d);
+  var anchor = new Date(ANCHOR);
+  var diffDays = Math.round((target - anchor) / 86400000);
+  var offset = ((diffDays % 6) + 6) % 6;
+  return offset >= 2;
+}
+
+function changeMonth(dir){
+  currentMonth += dir;
+  if(currentMonth>11){currentMonth=0;currentYear++;}
+  if(currentMonth<0){currentMonth=11;currentYear--;}
+  refreshAll();
+}
+function refreshDateLabel(){
+  document.getElementById('date-label').textContent = currentYear+'년 '+(currentMonth+1)+'월';
+}
+
+function buildCalendar(){
+  var grid=document.getElementById('cal-grid');
+  grid.innerHTML='';
+  ['일','월','화','수','목','금','토'].forEach(function(d){
+    var el=document.createElement('div');el.className='cal-day-label';el.textContent=d;grid.appendChild(el);
+  });
+  var firstDay=new Date(currentYear,currentMonth,1).getDay();
+  var daysInMonth=new Date(currentYear,currentMonth+1,0).getDate();
+  var td=todayStr();
+  for(var i=0;i<firstDay;i++){var e=document.createElement('div');e.className='cal-cell empty';grid.appendChild(e);}
+  for(var d=1; d<=daysInMonth; d++){
+    var ds=dateKey(currentYear,currentMonth,d);
+    var work=isWorkDay(currentYear,currentMonth,d);
+    var cell=document.createElement('div');
+    var annualOn = work && ((remoteData.annual && remoteData.annual[ds]) || false);
+    var holidayName = KOREAN_HOLIDAYS[ds] || '';
+    cell.className='cal-cell '+(work?'work':'off')+(ds===td?' today':'')+(annualOn?' annual-day':'')+(holidayName?' holiday':'');
+    var html='<div class="cal-num'+(holidayName?' holiday':'')+'">'+d+(work?'':' · 휴')+(holidayName?' · '+holidayName:'')+'</div>';
+    if(work){
+      var callVal=(remoteData.calls && remoteData.calls[ds]) || '';
+      html+='<input class="cal-call-input" type="number" inputmode="numeric" placeholder="정상콜" value="'+callVal+'" data-date="'+ds+'" oninput="saveCall(this)">';
+      var totalVal=(remoteData.calltotal && remoteData.calltotal[ds]) || '';
+      html+='<input class="cal-total-input" type="number" inputmode="numeric" placeholder="총콜수(전산)" value="'+totalVal+'" data-date="'+ds+'" oninput="saveCallTotal(this)">';
+      computeMissingCall(ds, 'total');
+    }
+    var extraVal=(remoteData.extracalls && remoteData.extracalls[ds]) || '';
+    var durMin=parseInt((remoteData.extradur && remoteData.extradur[ds]) || 0)||0;
+    var durH=Math.floor(durMin/60), durM=durMin%60;
+    html+='<input class="cal-extra-input" type="number" inputmode="numeric" placeholder="특근콜" value="'+extraVal+'" data-date="'+ds+'" onchange="saveExtraCall(this)">';
+    html+='<div class="cal-dur-row" data-date="'+ds+'">'+
+      '<input class="cal-dur-h" type="number" inputmode="numeric" placeholder="0" value="'+(durH||'')+'" data-date="'+ds+'" onchange="saveExtraDurHM(this)">'+
+      '<span class="dur-unit">H</span>'+
+      '<input class="cal-dur-m" type="number" inputmode="numeric" placeholder="0" value="'+(durM||'')+'" data-date="'+ds+'" onchange="saveExtraDurHM(this)">'+
+      '<span class="dur-unit">M</span>'+
+    '</div>';
+    if(work){
+      html+='<button type="button" class="cal-annual-btn'+(annualOn?' on':'')+'" data-date="'+ds+'" onclick="toggleAnnual(this)">'+(annualOn?'연차 ✓':'연차')+'</button>';
+    }
+    var memoVal=(remoteData.memo && remoteData.memo[ds]) || '';
+    html+='<button type="button" class="cal-memo-btn'+(memoVal?' has-memo':'')+'" data-date="'+ds+'" onclick="openMemoPopup(this)">'+(memoVal?'📝 메모':'📝 메모추가')+'</button>';
+    cell.innerHTML=html;
+    grid.appendChild(cell);
+  }
+}
+function saveCall(el){
+  if(!remoteData.calls) remoteData.calls={};
+  remoteData.calls[el.dataset.date]=el.value;
+  if(!remoteData.normalauto) remoteData.normalauto={};
+  remoteData.normalauto[el.dataset.date]=false;
+  computeMissingCall(el.dataset.date, 'normal');
+  pushToCloud();
+  buildPaySummary();
+}
+function saveCallTotal(el){
+  if(!remoteData.calltotal) remoteData.calltotal={};
+  remoteData.calltotal[el.dataset.date]=el.value;
+  computeMissingCall(el.dataset.date, 'total');
+  pushToCloud();
+  buildPaySummary();
+}
+function saveExtraCall(el){
+  if(!remoteData.extracalls) remoteData.extracalls={};
+  remoteData.extracalls[el.dataset.date]=el.value;
+  if(!remoteData.extraauto) remoteData.extraauto={};
+  remoteData.extraauto[el.dataset.date]=false;
+  computeMissingCall(el.dataset.date, 'extra');
+  pushToCloud();
+  buildPaySummary();
+}
+// 정상콜·특근콜·총콜수 중 두 개가 채워지면 나머지 하나를 자동 계산.
+// "총콜수를 방금 바꿨는데 특근콜을 손으로 직접 넣어둔 상태였다" 같은 경우엔
+// 손으로 넣은 값(특근콜)은 그대로 두고, 정상콜 쪽을 대신 채워준다.
+function computeMissingCall(ds, trigger){
+  var totalVal=remoteData.calltotal && remoteData.calltotal[ds];
+  if(totalVal===undefined || totalVal===null || totalVal==='') return;
+  var totalNum=parseFloat(totalVal);
+  if(isNaN(totalNum)) return;
+
+  var normalRaw=(remoteData.calls && remoteData.calls[ds]) || '';
+  var extraRaw=(remoteData.extracalls && remoteData.extracalls[ds]) || '';
+  var hasNormal = normalRaw!=='' && !isNaN(parseFloat(normalRaw));
+  var hasExtra = extraRaw!=='' && !isNaN(parseFloat(extraRaw));
+  var normalAuto = remoteData.normalauto ? remoteData.normalauto[ds] : undefined;
+  var extraAuto = remoteData.extraauto ? remoteData.extraauto[ds] : undefined;
+
+  function deriveExtra(){
+    var n=parseFloat(normalRaw)||0, e=totalNum-n; if(e<0) e=0;
+    if(!remoteData.extracalls) remoteData.extracalls={};
+    remoteData.extracalls[ds]=String(e);
+    if(!remoteData.extraauto) remoteData.extraauto={};
+    remoteData.extraauto[ds]=true;
+    var input=document.querySelector('.cal-extra-input[data-date="'+ds+'"]');
+    if(input) input.value=e;
+  }
+  function deriveNormal(){
+    var e=parseFloat(extraRaw)||0, n=totalNum-e; if(n<0) n=0;
+    if(!remoteData.calls) remoteData.calls={};
+    remoteData.calls[ds]=String(n);
+    if(!remoteData.normalauto) remoteData.normalauto={};
+    remoteData.normalauto[ds]=true;
+    var input=document.querySelector('.cal-call-input[data-date="'+ds+'"]');
+    if(input) input.value=n;
+  }
+
+  if(trigger==='normal'){
+    if(extraAuto!==false) deriveExtra();
+  } else if(trigger==='extra'){
+    if(normalAuto!==false) deriveNormal();
+  } else {
+    if(extraAuto===false && normalAuto!==false) deriveNormal();
+    else if(normalAuto===false && extraAuto!==false) deriveExtra();
+    else if(hasExtra && !hasNormal) deriveNormal();
+    else if(hasNormal && !hasExtra) deriveExtra();
+  }
+}
+function saveExtraDurHM(el){
+  var ds=el.dataset.date;
+  var row=el.closest('.cal-dur-row');
+  var h=parseInt(row.querySelector('.cal-dur-h').value)||0;
+  var m=parseInt(row.querySelector('.cal-dur-m').value)||0;
+  if(!remoteData.extradur) remoteData.extradur={};
+  remoteData.extradur[ds]=String(h*60+m);
+  pushToCloud();
+  buildPaySummary();
+}
+function toggleAnnual(el){
+  var ds=el.dataset.date;
+  if(!remoteData.annual) remoteData.annual={};
+  var next=!remoteData.annual[ds];
+  remoteData.annual[ds]=next;
+  el.classList.toggle('on', next);
+  el.textContent = next ? '연차 ✓' : '연차';
+  el.closest('.cal-cell').classList.toggle('annual-day', next);
+  pushToCloud();
+  buildPaySummary();
+}
+
+var memoTargetDate=null;
+function openMemoPopup(el){
+  memoTargetDate=el.dataset.date;
+  var p=memoTargetDate.split('-');
+  document.getElementById('memo-popup-title').textContent=parseInt(p[1])+'월 '+parseInt(p[2])+'일 메모';
+  document.getElementById('memo-popup-text').value=(remoteData.memo && remoteData.memo[memoTargetDate]) || '';
+  document.getElementById('memo-popup-overlay').classList.add('open');
+}
+function closeMemoPopup(){ document.getElementById('memo-popup-overlay').classList.remove('open'); }
+function parseMemoDurationMinutes(text){
+  if(!text) return null;
+  var re=/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2})(?::(\d{2}))?/g;
+  var m, total=0, found=false;
+  while((m=re.exec(text))){
+    found=true;
+    var startMin=parseInt(m[1])*60+parseInt(m[2]);
+    var endMin=parseInt(m[3])*60+(m[4]!==undefined?parseInt(m[4]):0);
+    if(endMin<startMin) endMin+=24*60;
+    total += (endMin-startMin);
+  }
+  return found ? total : null;
+}
+function saveMemoPopup(){
+  var text=document.getElementById('memo-popup-text').value.trim();
+  if(!remoteData.memo) remoteData.memo={};
+  remoteData.memo[memoTargetDate]=text;
+  var btn=document.querySelector('.cal-memo-btn[data-date="'+memoTargetDate+'"]');
+  if(btn){ btn.classList.toggle('has-memo', !!text); btn.textContent = text ? '📝 메모' : '📝 메모추가'; }
+  var mins=parseMemoDurationMinutes(text);
+  if(mins!==null){
+    if(!remoteData.extradur) remoteData.extradur={};
+    remoteData.extradur[memoTargetDate]=String(mins);
+    var row=document.querySelector('.cal-dur-row[data-date="'+memoTargetDate+'"]');
+    if(row){
+      row.querySelector('.cal-dur-h').value = Math.floor(mins/60)||'';
+      row.querySelector('.cal-dur-m').value = (mins%60)||'';
+    }
+  }
+  pushToCloud();
+  buildPaySummary();
+  closeMemoPopup();
+}
+
+function getMonthAnnualDays(){
+  var daysInMonth=new Date(currentYear,currentMonth+1,0).getDate();
+  var count=0;
+  for(var d=1; d<=daysInMonth; d++){
+    var ds=dateKey(currentYear,currentMonth,d);
+    if(remoteData.annual && remoteData.annual[ds]) count++;
+  }
+  return count;
+}
+function getTierRate(avgPerHour){
+  for(var i=0;i<TIERS.length;i++){ if(avgPerHour >= TIERS[i].min) return TIERS[i]; }
+  return TIERS[TIERS.length-1];
+}
+
+/* ── 임의의 연/월에 대한 급여 계산 (월간 그래프·데이터 가져오기용) ── */
+function computeMonthPay(y, m){
+  var daysInMonth=new Date(y,m+1,0).getDate();
+  var calls=[];
+  var extraCalls=0, extraMinutes=0;
+  for(var d=1; d<=daysInMonth; d++){
+    var ds=dateKey(y,m,d);
+    if(isWorkDay(y,m,d)){
+      var v=(remoteData.calls && remoteData.calls[ds]) || '';
+      if(v!==''&&v!==null) calls.push(parseFloat(v));
+    }
+    var ev=(remoteData.extracalls && remoteData.extracalls[ds]) || '';
+    if(ev!==''&&ev!==null){
+      extraCalls += parseFloat(ev)||0;
+      var dur=(remoteData.extradur && remoteData.extradur[ds]) || '0';
+      extraMinutes += parseInt(dur)||0;
+    }
+  }
+  var totalCalls=calls.reduce(function(a,b){return a+b;},0);
+  var perHourVals=calls.map(function(c){return c/8;});
+  var avgPerHour = perHourVals.length ? Math.ceil(perHourVals.reduce(function(a,b){return a+b;},0)/perHourVals.length) : 0;
+  var tier=getTierRate(avgPerHour);
+  var basePay=totalCalls*tier.rate;
+  var extraPay=extraCalls*EXTRA_RATE;
+  var s=(remoteData.paysettings && remoteData.paysettings[y+'-'+pad(m+1)]) || {comm:0,annual:0,cond:0,extra:0};
+  var total=basePay+extraPay+(s.comm||0)+(s.annual||0)+(s.cond||0)+(s.extra||0);
+  return {workdays:calls.length, totalCalls:totalCalls, avgPerHour:avgPerHour, tier:tier, basePay:basePay, extraCalls:extraCalls, extraMinutes:extraMinutes, extraPay:extraPay, fixed:(s.comm||0)+(s.annual||0)+(s.cond||0)+(s.extra||0), total:total, hasData: calls.length>0 || extraCalls>0};
+}
+
+function getAllRecordedMonths(){
+  var months={};
+  if(remoteData.calls) Object.keys(remoteData.calls).forEach(function(ds){ months[ds.slice(0,7)]=true; });
+  if(remoteData.extracalls) Object.keys(remoteData.extracalls).forEach(function(ds){ months[ds.slice(0,7)]=true; });
+  if(remoteData.paysettings) Object.keys(remoteData.paysettings).forEach(function(k){ months[k]=true; });
+  return Object.keys(months).sort();
+}
+
+function buildMonthlyChart(){
+  var months = getAllRecordedMonths();
+  var chartWrap = document.getElementById('monthly-chart-wrap');
+  var tableWrap = document.getElementById('monthly-table');
+  if(!months.length){
+    chartWrap.innerHTML = '<div class="tip-note">아직 기록된 달이 없어요. 근무 달력에 콜수를 입력하거나, 단가 설정 탭에서 데이터를 가져와보세요.</div>';
+    tableWrap.innerHTML = '';
+    return;
+  }
+  var curKey = currentYear+'-'+pad(currentMonth+1);
+  var results = months.map(function(mk){
+    var y = parseInt(mk.split('-')[0]), m = parseInt(mk.split('-')[1])-1;
+    var r = computeMonthPay(y,m);
+    r.key = mk;
+    return r;
+  });
+
+  var vals = results.map(function(r){return r.total;});
+  var minV = Math.min.apply(null, vals);
+  var maxV = Math.max.apply(null, vals);
+  if(minV===maxV){ minV = minV*0.9; maxV = maxV*1.1 || 10000; }
+  var range = maxV - minV;
+
+  var padL=54, padR=20, padT=24, padB=30;
+  var W = Math.max(360, results.length*90);
+  var H = 220;
+  var plotW = W - padL - padR;
+  var plotH = H - padT - padB;
+
+  var points = results.map(function(r, i){
+    var x = results.length>1 ? padL + (i/(results.length-1))*plotW : padL + plotW/2;
+    var y = padT + plotH - ((r.total - minV)/range)*plotH;
+    return {x:x, y:y, r:r};
+  });
+
+  var pathD = 'M' + points.map(function(p){ return p.x+','+p.y; }).join(' L');
+  var areaD = pathD + ' L' + points[points.length-1].x + ',' + (padT+plotH) + ' L' + points[0].x + ',' + (padT+plotH) + ' Z';
+
+  var pointsHtml = points.map(function(p){
+    var isCur = p.r.key === curKey;
+    var color = isCur ? '#2a5a8a' : '#5c8fc4';
+    return '<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(isCur?6:4.5)+'" fill="'+color+'" stroke="#fff" stroke-width="2"/>'+
+      '<text x="'+p.x+'" y="'+(p.y-12)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+color+'">'+Math.round(p.r.total/10000)+'만</text>'+
+      '<text x="'+p.x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#9a9088" font-weight="700">'+p.r.key.slice(2).replace('-','.')+'</text>';
+  }).join('');
+
+  var svgHtml = '<div style="width:100%;overflow-x:auto"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
+    '<path d="'+areaD+'" fill="#2a5a8a" fill-opacity="0.08"/>'+
+    '<path d="'+pathD+'" fill="none" stroke="#2a5a8a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'+
+    pointsHtml+
+    '</svg></div>';
+
+  chartWrap.innerHTML = svgHtml;
+
+  var tableHtml = '';
+  results.slice().reverse().forEach(function(r){
+    tableHtml += '<div class="m-table-row"><div class="m-label">'+r.key+' · 근무 '+r.workdays+'일 · 정상콜 '+r.totalCalls.toLocaleString()+'개 · 특근콜 '+r.extraCalls.toLocaleString()+'개</div><div class="m-val">'+Math.round(r.total).toLocaleString()+'원</div></div>';
+  });
+  tableWrap.innerHTML = tableHtml;
+}
+
+
+function buildPaySummary(){
+  var r=computeMonthPay(currentYear, currentMonth);
+  var extraHourText = r.extraMinutes>0 ? (Math.floor(r.extraMinutes/60)>0 ? Math.floor(r.extraMinutes/60)+'H ' : '')+(r.extraMinutes%60>0 ? (r.extraMinutes%60)+'min' : '') : '0min';
+
+  document.getElementById('p-workdays').textContent=r.workdays;
+  document.getElementById('p-totalcalls').textContent=r.totalCalls.toLocaleString();
+  document.getElementById('p-avgperhour').textContent=r.avgPerHour;
+  document.getElementById('p-extracalls').textContent=r.extraCalls.toLocaleString();
+  document.getElementById('p-extrahours').textContent=extraHourText;
+  document.getElementById('p-annualdays').textContent=getMonthAnnualDays();
+
+  document.getElementById('pay-base').textContent = Math.round(r.basePay).toLocaleString()+'원';
+  document.getElementById('tier-badge').textContent = r.tier.min+'콜↑ · '+r.tier.rate+'원';
+  document.getElementById('pay-extracall').textContent = Math.round(r.extraPay).toLocaleString()+'원';
+  document.getElementById('extra-badge').textContent = r.extraCalls+'콜 · '+extraHourText+' · '+EXTRA_RATE+'원';
+
+  recalcPay(r.basePay, r.extraPay);
+}
+
+function recalcPay(basePayOverride, extraPayOverride){
+  var basePay = basePayOverride;
+  if(basePay===undefined){ var t=document.getElementById('pay-base').textContent.replace(/[^0-9]/g,''); basePay=parseInt(t)||0; }
+  var extraPay = extraPayOverride;
+  if(extraPay===undefined){ var t2=document.getElementById('pay-extracall').textContent.replace(/[^0-9]/g,''); extraPay=parseInt(t2)||0; }
+  var comm=parseFloat(document.getElementById('pay-comm').value)||0;
+  var annual=parseFloat(document.getElementById('pay-annual').value)||0;
+  var cond=parseFloat(document.getElementById('pay-condolence').value)||0;
+  var extra=parseFloat(document.getElementById('pay-extra').value)||0;
+  var total=basePay+extraPay+comm+annual+cond+extra;
+  document.getElementById('pay-total').textContent=Math.round(total).toLocaleString()+'원';
+  if(!remoteData.paysettings) remoteData.paysettings={};
+  remoteData.paysettings[currentYear+'-'+pad(currentMonth+1)] = {comm:comm,annual:annual,cond:cond,extra:extra};
+  pushToCloud();
+}
+
+function loadPaySettings(){
+  var key=currentYear+'-'+pad(currentMonth+1);
+  var s=(remoteData.paysettings && remoteData.paysettings[key]) || {comm:30000,annual:0,cond:0,extra:0};
+  document.getElementById('pay-comm').value=s.comm;
+  document.getElementById('pay-annual').value=s.annual;
+  document.getElementById('pay-condolence').value=s.cond;
+  document.getElementById('pay-extra').value=s.extra;
+}
+
+function buildTierTable(){
+  var tbody=document.getElementById('tier-tbody');
+  tbody.innerHTML='';
+  TIERS.forEach(function(t,i){
+    var tr=document.createElement('tr');
+    var label = i===0 ? t.min+'콜 이상' : (i===TIERS.length-1 ? t.min+'~'+(TIERS[i-1].min-1)+'콜' : t.min+'~'+(TIERS[i-1].min-1)+'콜');
+    tr.innerHTML='<td>'+label+'</td><td><input type="number" value="'+t.rate+'" data-idx="'+i+'" onchange="updateTier(this)"></td>';
+    tbody.appendChild(tr);
+  });
+}
+function updateTier(el){
+  var idx=parseInt(el.dataset.idx);
+  TIERS[idx].rate=parseFloat(el.value)||0;
+  remoteData.tiers = TIERS;
+  pushToCloud();
+  buildPaySummary();
+}
+function saveExtraRate(){
+  EXTRA_RATE=parseFloat(document.getElementById('extra-rate').value)||990;
+  remoteData.extraRate = EXTRA_RATE;
+  pushToCloud();
+  buildPaySummary();
+}
+function saveAnchor(){
+  ANCHOR=document.getElementById('anchor-date').value || ANCHOR;
+  remoteData.anchor = ANCHOR;
+  pushToCloud();
+  buildCalendar();
+  buildPaySummary();
+}
+
+function switchTab(id){
+  ['calendar','pay','settings','monthly','export'].forEach(function(t,i){document.querySelectorAll('.tab')[i].classList.toggle('active', t===id);});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('panel-'+id).classList.add('active');
+  if(id==='pay'){ loadPaySettings(); buildPaySummary(); }
+  if(id==='monthly'){ buildMonthlyChart(); }
+  if(id==='export'){ buildExportText(); }
+}
+
+function buildExportText(){
+  var daysInMonth=new Date(currentYear,currentMonth+1,0).getDate();
+  var lines=[];
+  lines.push('◆ 인콜 급여 검토용 요약 ('+currentYear+'년 '+(currentMonth+1)+'월)');
+  lines.push('휴무 기준일: '+ANCHOR+' (4근무·2휴무 패턴)');
+  lines.push('');
+  lines.push('[일자별 기록]');
+  lines.push('날짜\t구분\t정상콜\t총콜수(전산)\t특근콜\t특근시간\t연차\t메모');
+  for(var d=1; d<=daysInMonth; d++){
+    var ds=dateKey(currentYear,currentMonth,d);
+    var work=isWorkDay(currentYear,currentMonth,d);
+    var callVal=work ? ((remoteData.calls && remoteData.calls[ds]) || '') : '';
+    var totalVal=(remoteData.calltotal && remoteData.calltotal[ds]) || '';
+    var extraVal=(remoteData.extracalls && remoteData.extracalls[ds]) || '';
+    var durVal=(remoteData.extradur && remoteData.extradur[ds]) || '';
+    var annualOn=(remoteData.annual && remoteData.annual[ds]) || false;
+    var memoVal=(remoteData.memo && remoteData.memo[ds]) || '';
+    if(callVal!=='' || totalVal!=='' || extraVal!=='' || annualOn || memoVal){
+      lines.push(d+'일\t'+(work?'근무':'휴무')+'\t'+(callVal||'-')+'\t'+(totalVal||'-')+'\t'+(extraVal||'-')+'\t'+(extraVal?(durVal?durVal+'분':'-'):'-')+'\t'+(annualOn?'연차':'-')+'\t'+(memoVal||'-'));
+    }
+  }
+  lines.push('');
+  var r=computeMonthPay(currentYear, currentMonth);
+  var s=(remoteData.paysettings && remoteData.paysettings[currentYear+'-'+pad(currentMonth+1)]) || {comm:30000,annual:0,cond:0,extra:0};
+
+  lines.push('[월 집계]');
+  lines.push('근무일수: '+r.workdays+'일');
+  lines.push('정상근무 총 콜수: '+r.totalCalls);
+  lines.push('일평균 콜/시간: '+r.avgPerHour+' (적용단가 '+r.tier.rate+'원/콜)');
+  lines.push('특근 콜수: '+r.extraCalls+' (총 '+(Math.floor(r.extraMinutes/60)>0?Math.floor(r.extraMinutes/60)+'H ':'')+(r.extraMinutes%60>0?(r.extraMinutes%60)+'min':'')+', 단가 '+EXTRA_RATE+'원/콜)');
+  lines.push('연차 사용일수: '+getMonthAnnualDays()+'일');
+  lines.push('');
+  lines.push('[급여 내역]');
+  lines.push('기본급: '+Math.round(r.basePay).toLocaleString()+'원');
+  lines.push('특근콜수당: '+Math.round(r.extraPay).toLocaleString()+'원');
+  lines.push('통신비: '+Math.round(s.comm).toLocaleString()+'원');
+  lines.push('연차수당: '+Math.round(s.annual).toLocaleString()+'원');
+  lines.push('경조휴가비: '+Math.round(s.cond).toLocaleString()+'원');
+  lines.push('추가정산액: '+Math.round(s.extra).toLocaleString()+'원');
+  lines.push('총 급여: '+Math.round(r.total).toLocaleString()+'원');
+  document.getElementById('export-text').value = lines.join('\n');
+}
+function copyExport(){
+  var ta=document.getElementById('export-text');
+  ta.select(); ta.setSelectionRange(0, 999999);
+  try{ document.execCommand('copy'); }catch(e){ if(navigator.clipboard) navigator.clipboard.writeText(ta.value); }
+}
+
+document.getElementById('memo-popup-overlay').onclick=function(e){if(e.target===this)closeMemoPopup();};
+
+var now=new Date();
+currentYear=now.getFullYear();
+currentMonth=now.getMonth();
+document.getElementById('anchor-date').value=ANCHOR;
+document.getElementById('extra-rate').value=EXTRA_RATE;
+document.getElementById('room-id').value=ROOM;
+// 숫자 입력칸에 커서/포커스가 있는 상태에서 마우스 휠을 굴리면
+// 브라우저가 값을 조용히 올리거나 내려버리는 경우가 있어서, 그걸 막는다.
+document.addEventListener('wheel', function(e){
+  var el=document.activeElement;
+  if(el && el.tagName==='INPUT' && el.type==='number'){ el.blur(); }
+}, {passive:true});
+buildTierTable();
+refreshAll();
+function refreshAll(){
+  refreshDateLabel();
+  buildCalendar();
+  buildPaySummary();
+  loadPaySettings();
+}
+</script>
+</body>
+</html>
