@@ -96,6 +96,9 @@
   .cal-annual-btn { width: 94%; margin-top: 2px; padding: 4px 0; border-radius: 6px; border: 1px solid #d8cbe8; background: #fff; color: #9a8ab0; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
   .cal-annual-btn.on { background: #8a5ec9; border-color: #8a5ec9; color: #fff; }
   .cal-cell.annual-day { box-shadow: inset 0 0 0 2px #8a5ec9; }
+  .cal-tk-btn { width: 94%; margin-top: 2px; padding: 4px 0; border-radius: 6px; border: 1px dashed #b9c9b0; background: #fff; color: #8fa386; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .cal-tk-btn.on { border-style: solid; border-color: #6fa87a; background: #e4f3e6; color: #2f7a47; }
+  .cal-tk-btn:disabled { opacity: 0.35; cursor: not-allowed; background: transparent; }
   .cal-memo-btn { width: 94%; margin-top: 2px; padding: 4px 0; border-radius: 6px; border: 1px dashed #d0cbc4; background: transparent; color: #b0a898; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .cal-memo-btn.has-memo { border-style: solid; border-color: #c9457a; background: #c9457a; color: #fff; font-weight: 700; box-shadow: 0 1px 4px #c9457a55; }
 
@@ -201,6 +204,7 @@
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8a5ec9"></div>연차 사용</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#d0402a"></div>공휴일</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#c0392b"></div>⚠ 정상+특근 ≠ 총콜수</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#6fa87a"></div>🍀 타임키퍼 입력완료</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#c9457a"></div>메모 있음</div>
     </div>
     <div class="cal-grid" id="cal-grid"></div>
@@ -511,6 +515,8 @@ function buildCalendar(){
     if(work){
       html+='<button type="button" class="cal-annual-btn'+(annualOn?' on':'')+'" data-date="'+ds+'" onclick="toggleAnnual(this)">'+(annualOn?'연차 ✓':'연차')+'</button>';
     }
+    var tkOn=!!(remoteData.timekeeper && remoteData.timekeeper[ds]);
+    html+='<button type="button" class="cal-tk-btn'+(tkOn?' on':'')+'" data-date="'+ds+'" onclick="toggleTimekeeper(this)"'+(tkActive(ds)?'':' disabled')+'>'+(tkOn?'🍀 입력완료':'⏳ 타임키퍼')+'</button>';
     var memoVal=(remoteData.memo && remoteData.memo[ds]) || '';
     html+='<button type="button" class="cal-memo-btn'+(memoVal?' has-memo':'')+'" data-date="'+ds+'" onclick="openMemoPopup(this)">'+(memoVal?'📝 메모':'📝 메모추가')+'</button>';
     cell.innerHTML=html;
@@ -539,6 +545,7 @@ function saveExtraCall(el){
   if(!remoteData.extraauto) remoteData.extraauto={};
   remoteData.extraauto[el.dataset.date]=false;
   computeMissingCall(el.dataset.date, 'extra');
+  updateTkState(el.dataset.date);
   pushToCloud();
   buildPaySummary();
 }
@@ -566,6 +573,7 @@ function computeMissingCall(ds, trigger){
     remoteData.extraauto[ds]=true;
     var input=document.querySelector('.cal-extra-input[data-date="'+ds+'"]');
     if(input) input.value=e;
+    updateTkState(ds);
   }
   function deriveNormal(){
     var e=parseFloat(extraRaw)||0, n=totalNum-e; if(n<0) n=0;
@@ -606,8 +614,28 @@ function toggleAnnual(el){
   el.classList.toggle('on', next);
   el.textContent = next ? '연차 ✓' : '연차';
   el.closest('.cal-cell').classList.toggle('annual-day', next);
+  updateTkState(ds);
   pushToCloud();
   buildPaySummary();
+}
+
+function tkActive(ds){
+  if(remoteData.annual && remoteData.annual[ds]) return true;
+  var v=remoteData.extracalls && remoteData.extracalls[ds];
+  return v!==undefined && v!==null && v!=='' && (parseFloat(v)||0)>0;
+}
+function updateTkState(ds){
+  var btn=document.querySelector('.cal-tk-btn[data-date="'+ds+'"]');
+  if(btn) btn.disabled=!tkActive(ds);
+}
+function toggleTimekeeper(el){
+  var ds=el.dataset.date;
+  if(!remoteData.timekeeper) remoteData.timekeeper={};
+  var next=!remoteData.timekeeper[ds];
+  remoteData.timekeeper[ds]=next;
+  el.classList.toggle('on', next);
+  el.textContent = next ? '🍀 입력완료' : '⏳ 타임키퍼';
+  pushToCloud();
 }
 
 var memoTargetDate=null;
