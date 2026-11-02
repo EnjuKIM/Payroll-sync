@@ -939,7 +939,7 @@ function buildMonthlyChart(){
 
   var tableHtml = '';
   results.slice().reverse().forEach(function(r){
-    var label = r.past ? r.key+' · 과거 자료 (금액만)' : r.key+' · 근무 '+r.workdays+'일 · 정상콜 '+r.totalCalls.toLocaleString()+'개 · 특근콜 '+r.extraCalls.toLocaleString()+'개';
+    var label = r.past ? r.key :r.key+' · 근무 '+r.workdays+'일 · 정상콜 '+r.totalCalls.toLocaleString()+'개 · 특근콜 '+r.extraCalls.toLocaleString()+'개';
     tableHtml += '<div class="m-table-row"><div class="m-label">'+label+'</div><div class="m-val">'+Math.round(r.total).toLocaleString()+'원</div></div>';
   });
   tableWrap.innerHTML = tableHtml;
