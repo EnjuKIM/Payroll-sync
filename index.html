@@ -146,6 +146,12 @@
   .m-table-row:last-child { border-bottom: none; }
   .m-table-row .m-label { color: #6a6258; font-weight: 600; }
   .m-table-row .m-val { color: #2a2620; font-weight: 700; }
+  .year-nav { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 8px; }
+  .year-nav span { font-size: 16px; font-weight: 700; color: #2a2620; min-width: 70px; text-align: center; }
+  .year-nav button { background: #f5f3ef; border: 1px solid #e0dbd4; border-radius: 6px; padding: 5px 14px; font-size: 12px; color: #2a5a8a; cursor: pointer; font-family: inherit; font-weight: 700; }
+  .year-nav button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .year-summary { text-align: center; font-size: 12px; color: #6a6258; margin-bottom: 10px; line-height: 1.7; }
+  .year-summary b { color: #2a5a8a; }
   .save-btn { width: 100%; padding: 13px; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; background:#2a5a8a; }
   .save-btn:hover { opacity: 0.9; }
 
@@ -199,7 +205,7 @@
     <div class="card-title"><span>📅</span> 4일 근무 · 2일 휴무 (07:00–16:00)</div>
     <div class="cal-legend">
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#eaf2fb;border:1.5px solid #cfe0f5"></div>정상근무 인콜</div>
-      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fff8ec;border:1.5px solid #e8d4a0"></div>특근 콜 (990원/콜)</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fff8ec;border:1.5px solid #e8d4a0"></div>특근 콜</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#f2f0eb;border:1.5px solid #e8e3db"></div>휴무일</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#8a5ec9"></div>연차 사용</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#d0402a"></div>공휴일</div>
@@ -232,7 +238,7 @@
       <div class="b-val" id="pay-base">0원</div>
     </div>
     <div class="breakdown-row">
-      <div class="b-label">특근콜수당 (특근콜 × 990원)<span class="extra-badge" id="extra-badge">0콜</span></div>
+      <div class="b-label">특근콜수당 (특근콜 × 특근단가)<span class="extra-badge" id="extra-badge">0콜</span></div>
       <div class="b-val" id="pay-extracall">0원</div>
     </div>
     <div class="breakdown-row">
@@ -261,6 +267,7 @@
 <div class="panel" id="panel-settings">
   <div class="card">
     <div class="card-title"><span>🏷️</span> 정상근무 콜 단가표</div>
+    <div class="tip-note gold" id="rate-note" style="margin-top:0;margin-bottom:12px"></div>
     <table class="tier-table">
       <thead><tr><th>평균 콜/시간</th><th>단가 (원/콜)</th></tr></thead>
       <tbody id="tier-tbody"></tbody>
@@ -690,9 +697,28 @@ function getMonthAnnualDays(){
   }
   return count;
 }
-function getTierRate(avgPerHour){
-  for(var i=0;i<TIERS.length;i++){ if(avgPerHour >= TIERS[i].min) return TIERS[i]; }
-  return TIERS[TIERS.length-1];
+function getTierRate(avgPerHour, tiers){
+  tiers = tiers || TIERS;
+  for(var i=0;i<tiers.length;i++){ if(avgPerHour >= tiers[i].min) return tiers[i]; }
+  return tiers[tiers.length-1];
+}
+
+// 단가 변경 이력: remoteData.raterules = { 'YYYY-MM': {tiers:[...], extra:N} }
+// 어떤 달의 단가 = 그 달 이하 중 가장 가까운 변경 기록. 기록이 없으면 기본 단가(TIERS, EXTRA_RATE).
+function getRatesFor(y, m){
+  var key=y+'-'+pad(m+1), best=null, rules=remoteData.raterules||{};
+  Object.keys(rules).forEach(function(k){ if(k<=key && (best===null || k>best)) best=k; });
+  if(best!==null) return {tiers:rules[best].tiers, extra:rules[best].extra, from:best};
+  return {tiers:TIERS, extra:EXTRA_RATE, from:null};
+}
+function ensureRateRule(){
+  if(!remoteData.raterules) remoteData.raterules={};
+  var key=currentYear+'-'+pad(currentMonth+1);
+  if(!remoteData.raterules[key]){
+    var eff=getRatesFor(currentYear,currentMonth);
+    remoteData.raterules[key]={tiers:JSON.parse(JSON.stringify(eff.tiers)), extra:eff.extra};
+  }
+  return remoteData.raterules[key];
 }
 
 /* ── 임의의 연/월에 대한 급여 계산 (월간 그래프·데이터 가져오기용) ── */
@@ -716,12 +742,13 @@ function computeMonthPay(y, m){
   var totalCalls=calls.reduce(function(a,b){return a+b;},0);
   var perHourVals=calls.map(function(c){return c/8;});
   var avgPerHour = perHourVals.length ? Math.ceil(perHourVals.reduce(function(a,b){return a+b;},0)/perHourVals.length) : 0;
-  var tier=getTierRate(avgPerHour);
+  var rt=getRatesFor(y,m);
+  var tier=getTierRate(avgPerHour, rt.tiers);
   var basePay=totalCalls*tier.rate;
-  var extraPay=extraCalls*EXTRA_RATE;
+  var extraPay=extraCalls*rt.extra;
   var s=(remoteData.paysettings && remoteData.paysettings[y+'-'+pad(m+1)]) || {comm:0,annual:0,cond:0,extra:0};
   var total=basePay+extraPay+(s.comm||0)+(s.annual||0)+(s.cond||0)+(s.extra||0);
-  return {workdays:calls.length, totalCalls:totalCalls, avgPerHour:avgPerHour, tier:tier, basePay:basePay, extraCalls:extraCalls, extraMinutes:extraMinutes, extraPay:extraPay, fixed:(s.comm||0)+(s.annual||0)+(s.cond||0)+(s.extra||0), total:total, hasData: calls.length>0 || extraCalls>0};
+  return {workdays:calls.length, totalCalls:totalCalls, avgPerHour:avgPerHour, tier:tier, basePay:basePay, extraCalls:extraCalls, extraMinutes:extraMinutes, extraPay:extraPay, extraRate:rt.extra, fixed:(s.comm||0)+(s.annual||0)+(s.cond||0)+(s.extra||0), total:total, hasData: calls.length>0 || extraCalls>0};
 }
 
 function getAllRecordedMonths(){
@@ -732,22 +759,41 @@ function getAllRecordedMonths(){
   return Object.keys(months).sort();
 }
 
+var graphYear = null;
+function changeGraphYear(dir){ graphYear += dir; buildMonthlyChart(); }
+
 function buildMonthlyChart(){
-  var months = getAllRecordedMonths();
   var chartWrap = document.getElementById('monthly-chart-wrap');
   var tableWrap = document.getElementById('monthly-table');
-  if(!months.length){
-    chartWrap.innerHTML = '<div class="tip-note">아직 기록된 달이 없어요. 근무 달력에 콜수를 입력하거나, 단가 설정 탭에서 데이터를 가져와보세요.</div>';
-    tableWrap.innerHTML = '';
-    return;
-  }
-  var curKey = currentYear+'-'+pad(currentMonth+1);
-  var results = months.map(function(mk){
+  var allResults = getAllRecordedMonths().map(function(mk){
     var y = parseInt(mk.split('-')[0]), m = parseInt(mk.split('-')[1])-1;
     var r = computeMonthPay(y,m);
     r.key = mk;
     return r;
-  });
+  }).filter(function(r){ return r.hasData; });
+  if(!allResults.length){
+    chartWrap.innerHTML = '<div class="tip-note">아직 기록된 달이 없어요. 근무 달력에 콜수를 입력하면 여기에 쌓여요.</div>';
+    tableWrap.innerHTML = '';
+    return;
+  }
+  var ys = allResults.map(function(r){ return parseInt(r.key.slice(0,4)); });
+  var minY = Math.min(currentYear, Math.min.apply(null, ys));
+  var maxY = Math.max(currentYear, Math.max.apply(null, ys));
+  if(graphYear===null) graphYear = currentYear;
+  if(graphYear<minY) graphYear=minY;
+  if(graphYear>maxY) graphYear=maxY;
+  var navHtml = '<div class="year-nav"><button type="button" onclick="changeGraphYear(-1)"'+(graphYear<=minY?' disabled':'')+'>◀</button>'+
+    '<span>'+graphYear+'년</span>'+
+    '<button type="button" onclick="changeGraphYear(1)"'+(graphYear>=maxY?' disabled':'')+'>▶</button></div>';
+  var results = allResults.filter(function(r){ return r.key.slice(0,4)===String(graphYear); });
+  if(!results.length){
+    chartWrap.innerHTML = navHtml + '<div class="tip-note">'+graphYear+'년에는 기록된 달이 없어요.</div>';
+    tableWrap.innerHTML = '';
+    return;
+  }
+  var curKey = currentYear+'-'+pad(currentMonth+1);
+  var yearTotal = results.reduce(function(a,r){ return a+r.total; }, 0);
+  var summaryHtml = '<div class="year-summary">'+graphYear+'년 합계 <b>'+Math.round(yearTotal).toLocaleString()+'원</b> · 월평균 <b>'+Math.round(yearTotal/results.length).toLocaleString()+'원</b> · 기록 '+results.length+'개월</div>';
 
   var vals = results.map(function(r){return r.total;});
   var minV = Math.min.apply(null, vals);
@@ -756,7 +802,7 @@ function buildMonthlyChart(){
   var range = maxV - minV;
 
   var padL=54, padR=20, padT=24, padB=30;
-  var W = Math.max(360, results.length*90);
+  var W = Math.max(360, results.length*72);
   var H = 220;
   var plotW = W - padL - padR;
   var plotH = H - padT - padB;
@@ -775,7 +821,7 @@ function buildMonthlyChart(){
     var color = isCur ? '#2a5a8a' : '#5c8fc4';
     return '<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(isCur?6:4.5)+'" fill="'+color+'" stroke="#fff" stroke-width="2"/>'+
       '<text x="'+p.x+'" y="'+(p.y-12)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+color+'">'+Math.round(p.r.total/10000)+'만</text>'+
-      '<text x="'+p.x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#9a9088" font-weight="700">'+p.r.key.slice(2).replace('-','.')+'</text>';
+      '<text x="'+p.x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#9a9088" font-weight="700">'+parseInt(p.r.key.slice(5))+'월</text>';
   }).join('');
 
   var svgHtml = '<div style="width:100%;overflow-x:auto"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+
@@ -784,7 +830,7 @@ function buildMonthlyChart(){
     pointsHtml+
     '</svg></div>';
 
-  chartWrap.innerHTML = svgHtml;
+  chartWrap.innerHTML = navHtml + summaryHtml + svgHtml;
 
   var tableHtml = '';
   results.slice().reverse().forEach(function(r){
@@ -808,7 +854,7 @@ function buildPaySummary(){
   document.getElementById('pay-base').textContent = Math.round(r.basePay).toLocaleString()+'원';
   document.getElementById('tier-badge').textContent = r.tier.min+'콜↑ · '+r.tier.rate+'원';
   document.getElementById('pay-extracall').textContent = Math.round(r.extraPay).toLocaleString()+'원';
-  document.getElementById('extra-badge').textContent = r.extraCalls+'콜 · '+extraHourText+' · '+EXTRA_RATE+'원';
+  document.getElementById('extra-badge').textContent = r.extraCalls+'콜 · '+extraHourText+' · '+r.extraRate+'원';
 
   recalcPay(r.basePay, r.extraPay);
 }
@@ -839,26 +885,35 @@ function loadPaySettings(){
 }
 
 function buildTierTable(){
+  var rt=getRatesFor(currentYear,currentMonth);
+  var tiers=rt.tiers;
   var tbody=document.getElementById('tier-tbody');
   tbody.innerHTML='';
-  TIERS.forEach(function(t,i){
+  tiers.forEach(function(t,i){
     var tr=document.createElement('tr');
-    var label = i===0 ? t.min+'콜 이상' : (i===TIERS.length-1 ? t.min+'~'+(TIERS[i-1].min-1)+'콜' : t.min+'~'+(TIERS[i-1].min-1)+'콜');
+    var label = i===0 ? t.min+'콜 이상' : t.min+'~'+(tiers[i-1].min-1)+'콜';
     tr.innerHTML='<td>'+label+'</td><td><input type="number" value="'+t.rate+'" data-idx="'+i+'" onchange="updateTier(this)"></td>';
     tbody.appendChild(tr);
   });
+  document.getElementById('extra-rate').value=rt.extra;
+  var hist=Object.keys(remoteData.raterules||{}).sort();
+  document.getElementById('rate-note').innerHTML =
+    '📌 지금 보고 있는 <b>'+(currentMonth+1)+'월</b> 기준 단가예요. 여기서 단가를 바꾸면 <b>'+currentYear+'년 '+(currentMonth+1)+'월부터 이후 달</b>에만 적용되고, 이전 달 급여는 그대로 유지돼요.<br>'+
+    (hist.length ? '단가 변경 이력: '+hist.join(', ')+' 부터 적용' : '단가 변경 이력: 없음 (기본 단가 사용 중)');
 }
 function updateTier(el){
   var idx=parseInt(el.dataset.idx);
-  TIERS[idx].rate=parseFloat(el.value)||0;
-  remoteData.tiers = TIERS;
+  var rule=ensureRateRule();
+  rule.tiers[idx].rate=parseFloat(el.value)||0;
   pushToCloud();
+  buildTierTable();
   buildPaySummary();
 }
 function saveExtraRate(){
-  EXTRA_RATE=parseFloat(document.getElementById('extra-rate').value)||990;
-  remoteData.extraRate = EXTRA_RATE;
+  var rule=ensureRateRule();
+  rule.extra=parseFloat(document.getElementById('extra-rate').value)||990;
   pushToCloud();
+  buildTierTable();
   buildPaySummary();
 }
 function saveAnchor(){
@@ -907,7 +962,7 @@ function buildExportText(){
   lines.push('근무일수: '+r.workdays+'일');
   lines.push('정상근무 총 콜수: '+r.totalCalls);
   lines.push('일평균 콜/시간: '+r.avgPerHour+' (적용단가 '+r.tier.rate+'원/콜)');
-  lines.push('특근 콜수: '+r.extraCalls+' (총 '+(Math.floor(r.extraMinutes/60)>0?Math.floor(r.extraMinutes/60)+'H ':'')+(r.extraMinutes%60>0?(r.extraMinutes%60)+'min':'')+', 단가 '+EXTRA_RATE+'원/콜)');
+  lines.push('특근 콜수: '+r.extraCalls+' (총 '+(Math.floor(r.extraMinutes/60)>0?Math.floor(r.extraMinutes/60)+'H ':'')+(r.extraMinutes%60>0?(r.extraMinutes%60)+'min':'')+', 단가 '+r.extraRate+'원/콜)');
   lines.push('연차 사용일수: '+getMonthAnnualDays()+'일');
   lines.push('');
   lines.push('[급여 내역]');
@@ -944,6 +999,7 @@ buildTierTable();
 refreshAll();
 function refreshAll(){
   refreshDateLabel();
+  buildTierTable();
   buildCalendar();
   buildPaySummary();
   loadPaySettings();
