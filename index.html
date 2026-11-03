@@ -907,7 +907,7 @@ function buildMonthlyChart(){
   var range = maxV - minV;
 
   var padL=28, padR=28, padT=24, padB=30;
-  var W = 420;
+  var W = Math.max(300, Math.round(chartWrap.clientWidth) || 360);
   var H = 220;
   var plotW = W - padL - padR;
   var plotH = H - padT - padB;
@@ -929,7 +929,7 @@ function buildMonthlyChart(){
       '<text x="'+p.x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#9a9088" font-weight="700">'+parseInt(p.r.key.slice(5))+'월</text>';
   }).join('');
 
-  var svgHtml = '<div style="width:100%;max-width:560px;margin:0 auto"><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">'+
+  var svgHtml = '<div style="width:100%"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="display:block">'+
     '<path d="'+areaD+'" fill="#2a5a8a" fill-opacity="0.08"/>'+
     '<path d="'+pathD+'" fill="none" stroke="#2a5a8a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'+
     pointsHtml+
@@ -945,6 +945,9 @@ function buildMonthlyChart(){
   tableWrap.innerHTML = tableHtml;
 }
 
+
+var _chartRz=null;
+window.addEventListener("resize",function(){ clearTimeout(_chartRz); _chartRz=setTimeout(function(){ if(typeof buildMonthlyChart==="function") buildMonthlyChart(); },200); });
 
 function buildPaySummary(){
   var r=computeMonthPay(currentYear, currentMonth);
