@@ -898,7 +898,7 @@ function buildMonthlyChart(){
   }
   var curKey = currentYear+'-'+pad(currentMonth+1);
   var yearTotal = results.reduce(function(a,r){ return a+r.total; }, 0);
-  var summaryHtml = '<div class="year-summary">'+graphYear+'년 합계 <b>'+Math.round(yearTotal).toLocaleString()+'원</b> · 월평균 <b>'+Math.round(yearTotal/results.length).toLocaleString()+'원</b> · 기록 '+results.length+'개월</div>';
+  var summaryHtml = '<div class="year-summary">'+graphYear+'년 합계 <b>'+Math.round(yearTotal).toLocaleString()+'원</b> · 월평균 <b>'+Math.round(yearTotal/results.length).toLocaleString()+'원</b></div>';
 
   var vals = results.map(function(r){return r.total;});
   var minV = Math.min.apply(null, vals);
