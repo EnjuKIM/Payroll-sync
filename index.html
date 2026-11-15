@@ -534,11 +534,11 @@ function buildCalendar(){
     var extraVal=(remoteData.extracalls && remoteData.extracalls[ds]) || '';
     var durMin=parseInt((remoteData.extradur && remoteData.extradur[ds]) || 0)||0;
     var durH=Math.floor(durMin/60), durM=durMin%60;
-    html+='<input class="cal-extra-input" type="number" inputmode="numeric" placeholder="특근콜" value="'+extraVal+'" data-date="'+ds+'" onchange="saveExtraCall(this)">';
+    html+='<input class="cal-extra-input" type="number" inputmode="numeric" placeholder="특근콜" value="'+extraVal+'" data-date="'+ds+'" oninput="saveExtraCall(this)">';
     html+='<div class="cal-dur-row" data-date="'+ds+'">'+
-      '<input class="cal-dur-h" type="number" inputmode="numeric" placeholder="0" value="'+(durH||'')+'" data-date="'+ds+'" onchange="saveExtraDurHM(this)">'+
+      '<input class="cal-dur-h" type="number" inputmode="numeric" placeholder="0" value="'+(durH||'')+'" data-date="'+ds+'" oninput="saveExtraDurHM(this)">'+
       '<span class="dur-unit">H</span>'+
-      '<input class="cal-dur-m" type="number" inputmode="numeric" placeholder="0" value="'+(durM||'')+'" data-date="'+ds+'" onchange="saveExtraDurHM(this)">'+
+      '<input class="cal-dur-m" type="number" inputmode="numeric" placeholder="0" value="'+(durM||'')+'" data-date="'+ds+'" oninput="saveExtraDurHM(this)">'+
       '<span class="dur-unit">M</span>'+
     '</div>';
     var mismatch=false;
