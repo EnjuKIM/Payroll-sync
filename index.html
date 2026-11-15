@@ -351,6 +351,10 @@ function setSyncBadge(state, text){
   document.getElementById('sync-text').textContent=text;
 }
 
+// 입력/저장 중 예상 못한 오류가 나면 조용히 넘어가지 않고 상단 상태 표시에 이유를 보여준다.
+window.addEventListener('error', function(ev){ setSyncBadge('error','오류 · '+(ev.message||'알 수 없음')); });
+window.addEventListener('unhandledrejection', function(ev){ var r=ev.reason; setSyncBadge('error','오류 · '+((r && (r.code||r.message))||r)); });
+
 function docRef(){
   return fb.doc(fb.db, 'payroll_rooms', ROOM);
 }
@@ -370,23 +374,32 @@ function attachRealtimeListener(){
     if(snap.exists()){
       remoteData = snap.data();
       suppressWrite = true;
-      TIERS = remoteData.tiers || TIERS;
-      EXTRA_RATE = remoteData.extraRate || EXTRA_RATE;
-      ANCHOR = remoteData.anchor || ANCHOR;
-      document.getElementById('anchor-date').value = ANCHOR;
-      document.getElementById('extra-rate').value = EXTRA_RATE;
-      buildTierTable();
-      buildCalendar();
-      buildPaySummary();
-      loadPaySettings();
-      if(document.getElementById('panel-monthly').classList.contains('active')) buildMonthlyChart();
-      suppressWrite = false;
+      var renderErr = false;
+      // 화면을 다시 그리다 오류가 나도 suppressWrite가 true로 남으면 이후 입력이 전부 조용히 저장되지 않으므로 반드시 풀어준다.
+      try{
+        TIERS = remoteData.tiers || TIERS;
+        EXTRA_RATE = remoteData.extraRate || EXTRA_RATE;
+        ANCHOR = remoteData.anchor || ANCHOR;
+        document.getElementById('anchor-date').value = ANCHOR;
+        document.getElementById('extra-rate').value = EXTRA_RATE;
+        buildTierTable();
+        buildCalendar();
+        buildPaySummary();
+        loadPaySettings();
+        if(document.getElementById('panel-monthly').classList.contains('active')) buildMonthlyChart();
+      }catch(err){
+        renderErr = true;
+        setSyncBadge('error','화면 오류 · '+((err && err.message)||err));
+        console.error(err);
+      }finally{
+        suppressWrite = false;
+      }
     }
     if(snap.metadata && snap.metadata.fromCache){
       // 서버에 못 붙고 이 PC에 저장된 마지막 캐시를 보여주는 중.
       // 화면에 보이는 데이터는 실제 값이며 비어있는 게 아님.
       setSyncBadge('error','오프라인 · 마지막 저장본 표시 중');
-    } else {
+    } else if(!renderErr){
       setSyncBadge('synced','동기화됨');
     }
   }, function(err){
@@ -406,7 +419,8 @@ function doPush(){
   });
 }
 function pushToCloud(){
-  if(!fb || suppressWrite) return;
+  if(!fb){ setSyncBadge('error','저장 안 됨 · 서버 연결 전'); return; }
+  if(suppressWrite) return;
   setSyncBadge('syncing','저장 중...');
   clearTimeout(syncTimer);
   syncPending = true;
