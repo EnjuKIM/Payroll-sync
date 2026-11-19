@@ -635,11 +635,11 @@ function computeMissingCall(ds, trigger){
   } else if(trigger==='extra'){
     if(normalAuto!==false) deriveNormal();
   } else {
-    // 사용자가 직접 지운(auto=false) 칸은 화면을 다시 그릴 때(새로고침·동기화) 자동으로 다시 채우지 않는다.
+    // 정상콜·총콜수가 있는데 특근콜이 비어 있으면(또는 그 반대) 예전에 그 칸을 직접 건드린 적이 있어도 빈 칸을 자동으로 채운다.
     if(extraAuto===false && normalAuto!==false) deriveNormal();
     else if(normalAuto===false && extraAuto!==false) deriveExtra();
-    else if(hasExtra && !hasNormal && normalAuto!==false) deriveNormal();
-    else if(hasNormal && !hasExtra && extraAuto!==false) deriveExtra();
+    else if(hasExtra && !hasNormal) deriveNormal();
+    else if(hasNormal && !hasExtra) deriveExtra();
   }
 }
 function saveExtraDurHM(el){
